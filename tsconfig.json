@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
         "target": "es6",
-        "outFile": "Bindind.js"
+        "outFile": "Binding.js"
     }
 }
