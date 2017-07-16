@@ -1,13 +1,3 @@
-// <video src="{Binding aa}">
-// {Binding aa}
-
-// let BindingOption = {
-//     id:"app",
-//     data:{
-//         class:h,
-//         weight:180
-//     }
-// }
 interface Observer {
     update<T, U>(T, U): void;
 }
@@ -19,13 +9,33 @@ interface Subject {
     notify<T, U>(T, U): void;
     _observers: Observer[];
 }
-class BindingOption {
-    constructor(id: string, data: object) {
-        this.id = id;
+class BindingData implements Subject {
+    constructor(data: object) {
         this.data = data;
+        this._observers = [];
     }
-    id: string;
     data: object;
+    _observers: Binding[];
+    notify(dataName: string, dataValue: any) {
+        this._observers.forEach(element => {
+            element.update(dataName, dataValue);
+        })
+    }
+    addListener(listener: Binding) {
+        if (this._observers.find(element => {
+            return element === listener;
+        }) === undefined) {
+            this._observers.push(listener);
+        }
+    }
+    removeListener(listener: Binding) {
+        let index = this._observers.findIndex(element => {
+            return element === listener;
+        });
+        if (index !== -1) {
+            this._observers.splice(index, 1);
+        }
+    }
 }
 
 
@@ -42,9 +52,19 @@ class DOMWatcher implements Observer {
                 return element === dataName;
             });
             if (index === -1) {
-                throw "data: " + dataName + " can't find!";
+                // throw "data: " + dataName + " can't find!";
+                return;
             }
+
             let attrName = this.bindingAttrs[index];
+
+            if(attrName === "innerText"){
+                let value = (<HTMLElement>this.node).innerText;
+                if(value !== dataValue){
+                    (<HTMLElement>this.node).innerText = dataValue;
+                }
+                return;
+            }
             let attrs = this.node.attributes;
             let attr = attrs.getNamedItem(attrName);
             if (attr === null) {
@@ -60,7 +80,7 @@ class DOMWatcher implements Observer {
             let index = this.bindingContents.findIndex(element => {
                 return element === dataName;
             });
-            if(index === -1){
+            if (index === -1) {
                 return;
             }
             this.node.nodeValue = dataValue;
@@ -73,19 +93,20 @@ class DOMWatcher implements Observer {
     bindingContents: string[] = [];
 }
 
-class Binding implements Subject {
-    constructor(binding: BindingOption) {
-        this.id = binding.id;
-        this.data = binding.data;
+class Binding implements Subject, Observer {
+    constructor(id: string, bindingData: BindingData) {
+        this.id = id;
+        this.data = bindingData;
         this._observers = [];
+        this.data.addListener(this);
         observe(this);
         let dom = nodeToFragment(document.getElementById(this.id), this);
         document.getElementById(this.id).appendChild(dom);
     }
     id: string;
-    data: object;
+    data: BindingData;
     _observers: Observer[];
-    dataChanged(dataName: string, dataValue: any) {
+    update(dataName: string, dataValue: any) {
         this.notify(dataName, dataValue);
     }
     addListener(listener: Observer) {
@@ -111,30 +132,31 @@ class Binding implements Subject {
 }
 
 function defineReactive(binding: Binding, key: string) {
+    let data = binding.data.data;
     Object.defineProperty(binding, key, {
         get: function () {
             //console.log("get " + key + " is " + value);
-            return binding.data[key];
+            return data[key];
         },
         set: function (newValue: any) {
             if (newValue === binding.data[key]) {
                 return;
             }
-            binding.data[key] = newValue;
-            binding.dataChanged(key, newValue)
+            data[key] = newValue;
+            binding.data.notify(key, newValue);
             //console.log("set " + key + " is " + value);
         }
     });
 }
 
 function observe(binding: Binding) {
-    Object.keys(binding.data).forEach(key => {
+    Object.keys(binding.data.data).forEach(key => {
         defineReactive(binding, key);
     });
 }
 
 function compile(node: Node, binding: Binding) {
-    let reg = /\{Binding (_|[a-zA-Z])+(\w*)\}/;
+    let reg = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
     if (node.nodeType === 1) {
         let attrs = node.attributes;
         let bindingAttrs: string[] = [];
@@ -149,29 +171,54 @@ function compile(node: Node, binding: Binding) {
                     bindingAttrs.push(attr.nodeName);
                     bindingContents.push(bindingContent);
 
-                    if(attr.nodeName === "value" && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA")){
-                        node.addEventListener("input",e=>{
-                            let element = <HTMLInputElement|HTMLTextAreaElement>(e.target);
-                            element.setAttribute("value",element.value);
-                        },false);
+                    if (attr.nodeName === "value" && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA")) {
+                        node.addEventListener("input", e => {
+                            let element = <HTMLInputElement | HTMLTextAreaElement>(e.target);
+                            element.setAttribute("value", element.value);
+                        }, false);
                     }
 
                     attr.nodeValue = binding[bindingContent];
                 }
             }
         }
+        if((<HTMLElement>node).innerText.match(reg) !== null){
+            let bindingContent = (<HTMLElement>node).innerText.substring(9, (<HTMLElement>node).innerText.length - 1);
+            if(binding[bindingContent] !== undefined){
+                bindingAttrs.push("innerText");
+                bindingContents.push(bindingContent);
+
+                (<HTMLElement>node).innerText = binding[bindingContent];
+            }
+        }
+
         if (bindingAttrs.length !== 0) {
             let mo = new MutationObserver(records => {
                 records.forEach(record => {
-                    let newVal = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
+                    if (record.type === "attributes") {
+                        let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
 
-                    // console.log(record.attributeName + " from " + record.oldValue + " to " + newVal);
+                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
 
-                    if (record.oldValue !== newVal) {
-                        let index = bindingAttrs.findIndex(function (value) {
-                            return value === record.attributeName;
-                        });
-                        binding[bindingContents[index]] = newVal;
+                        if (record.oldValue !== newValue) {
+                            let index = bindingAttrs.findIndex(function (value) {
+                                return value === record.attributeName;
+                            });
+                            binding[bindingContents[index]] = newValue;
+                        }
+
+                        return;
+                    }
+                    if(record.type === "characterData"){
+                        let newValue = (<CharacterData>record.target).data;
+                        if (record.oldValue !== newValue) {
+                            let index = bindingAttrs.findIndex(function (value) {
+                                return value === "innerText";
+                            });
+                            binding[bindingContents[index]] = newValue;
+                        }
+
+                        return;
                     }
                 });
             });
@@ -181,9 +228,10 @@ function compile(node: Node, binding: Binding) {
                 "attributeOldValue": true,
                 "characterData": true,
                 "characterDataOldValue": true,
+                "subtree": true,
                 "attributeFilter": bindingAttrs
             });
-            
+
             let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents);
             binding.addListener(watcher);
         }
