@@ -1,7 +1,8 @@
+const BINDING_REGEXP = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
+
 interface Observer {
     update<T, U>(T, U): void;
 }
-
 
 interface Subject {
     addListener(Observer): void;
@@ -9,6 +10,7 @@ interface Subject {
     notify<T, U>(T, U): void;
     _observers: Observer[];
 }
+
 class BindingData implements Subject {
     constructor(data: object) {
         this.data = data;
@@ -58,13 +60,6 @@ class DOMWatcher implements Observer {
 
             let attrName = this.bindingAttrs[index];
 
-            if(attrName === "innerText"){
-                let value = (<HTMLElement>this.node).innerText;
-                if(value !== dataValue){
-                    (<HTMLElement>this.node).innerText = dataValue;
-                }
-                return;
-            }
             let attrs = this.node.attributes;
             let attr = attrs.getNamedItem(attrName);
             if (attr === null) {
@@ -72,6 +67,9 @@ class DOMWatcher implements Observer {
             }
             if (attr.nodeValue !== dataValue) {
                 attr.nodeValue = dataValue;
+                if ((this.node.nodeName === "INPUT" || this.node.nodeName === "TEXTAREA") && attrName === "value") {
+                    (<HTMLInputElement | HTMLTextAreaElement>this.node).value = dataValue;
+                }
             }
             return;
         }
@@ -98,13 +96,15 @@ class Binding implements Subject, Observer {
         this.id = id;
         this.data = bindingData;
         this._observers = [];
+        this.compileChildNodes = true;
+        this.compileAllChildNodes = false;
         this.data.addListener(this);
         observe(this);
-        let dom = nodeToFragment(document.getElementById(this.id), this);
-        document.getElementById(this.id).appendChild(dom);
     }
     id: string;
     data: BindingData;
+    compileChildNodes: boolean;
+    compileAllChildNodes: boolean;
     _observers: Observer[];
     update(dataName: string, dataValue: any) {
         this.notify(dataName, dataValue);
@@ -128,6 +128,13 @@ class Binding implements Subject, Observer {
         this._observers.forEach(element => {
             element.update(dataName, dataValue);
         })
+    }
+    compile() {
+        let node = document.getElementById(this.id);
+        if (node === null) {
+            throw "Can't find node by ID: " + this.id;
+        }
+        compile(node, this, this.compileChildNodes, this.compileAllChildNodes);
     }
 }
 
@@ -155,16 +162,44 @@ function observe(binding: Binding) {
     });
 }
 
-function compile(node: Node, binding: Binding) {
-    let reg = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
-    if (node.nodeType === 1) {
+function compileTextNode(node: CharacterData, binding: Binding) {
+    let nodevalue = node.data.trim();
+    if (nodevalue.match(BINDING_REGEXP) !== null) {
+        let bindingContent = nodevalue.substring(9, nodevalue.length - 1);
+        if (binding[bindingContent] !== undefined) {
+            node.nodeValue = binding[bindingContent];
+
+            let mo = new MutationObserver(records => {
+                records.forEach(record => {
+                    let newVal = record.target.nodeValue;
+                    // console.log(record.attributeName + " from " + record.oldValue + " to " + newVal);
+                    if (record.oldValue !== newVal) {
+                        binding[bindingContent] = newVal;
+                    }
+                });
+            });
+
+            mo.observe(node, {
+                "characterData": true,
+                "characterDataOldValue": true
+            });
+
+            let watcher = new DOMWatcher(node, binding, ["nodeValue"], [bindingContent]);
+            binding.addListener(watcher);
+        }
+    }
+    return;
+}
+
+function compileHTMLNode(node: HTMLElement, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
+    if (node.hasAttributes()) {
         let attrs = node.attributes;
         let bindingAttrs: string[] = [];
         let bindingContents: string[] = [];
         for (let i = 0; i < attrs.length; i++) {
             let attr = attrs[i];
             let attrValue = attrs[i].nodeValue;
-            if (attr.nodeValue.match(reg) !== null) {
+            if (attr.nodeValue.trim().match(BINDING_REGEXP) !== null) {
                 let bindingContent = attr.nodeValue.substring(9, attr.nodeValue.length - 1);
 
                 if (binding[bindingContent] !== undefined) {
@@ -174,24 +209,15 @@ function compile(node: Node, binding: Binding) {
                     if (attr.nodeName === "value" && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA")) {
                         node.addEventListener("input", e => {
                             let element = <HTMLInputElement | HTMLTextAreaElement>(e.target);
-                            element.setAttribute("value", element.value);
+                            let value = element.value;
+                            element.setAttribute("value", value);
+                            element.value = value;
                         }, false);
                     }
-
                     attr.nodeValue = binding[bindingContent];
                 }
             }
         }
-        if((<HTMLElement>node).innerText.match(reg) !== null){
-            let bindingContent = (<HTMLElement>node).innerText.substring(9, (<HTMLElement>node).innerText.length - 1);
-            if(binding[bindingContent] !== undefined){
-                bindingAttrs.push("innerText");
-                bindingContents.push(bindingContent);
-
-                (<HTMLElement>node).innerText = binding[bindingContent];
-            }
-        }
-
         if (bindingAttrs.length !== 0) {
             let mo = new MutationObserver(records => {
                 records.forEach(record => {
@@ -199,25 +225,15 @@ function compile(node: Node, binding: Binding) {
                         let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
 
                         // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
-
                         if (record.oldValue !== newValue) {
                             let index = bindingAttrs.findIndex(function (value) {
                                 return value === record.attributeName;
                             });
                             binding[bindingContents[index]] = newValue;
                         }
-
-                        return;
-                    }
-                    if(record.type === "characterData"){
-                        let newValue = (<CharacterData>record.target).data;
-                        if (record.oldValue !== newValue) {
-                            let index = bindingAttrs.findIndex(function (value) {
-                                return value === "innerText";
-                            });
-                            binding[bindingContents[index]] = newValue;
+                        if ((record.target.nodeName === "INPUT" || record.target.nodeName === "TEXTAREA") && record.attributeName === "value") {
+                            (<HTMLInputElement | HTMLTextAreaElement>record.target).value = newValue;
                         }
-
                         return;
                     }
                 });
@@ -226,56 +242,41 @@ function compile(node: Node, binding: Binding) {
             mo.observe(node, {
                 "attributes": true,
                 "attributeOldValue": true,
-                "characterData": true,
-                "characterDataOldValue": true,
-                "subtree": true,
                 "attributeFilter": bindingAttrs
             });
 
             let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents);
             binding.addListener(watcher);
         }
-        return;
     }
 
-    if (node.nodeType === 3) {
-        let nodevalue = (<Text>node).wholeText.trim();
-        if (nodevalue.match(reg) !== null) {
-            let bindingContent = nodevalue.substring(9, nodevalue.length - 1);
-            if (binding[bindingContent] !== undefined) {
-                node.nodeValue = binding[bindingContent];
-
-                let mo = new MutationObserver(records => {
-                    records.forEach(record => {
-                        let newVal = record.target.nodeValue;
-                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newVal);
-                        if (record.oldValue !== newVal) {
-                            binding[bindingContent] = newVal;
-                        }
-                    });
-                });
-
-                mo.observe(node, {
-                    "characterData": true,
-                    "characterDataOldValue": true
-                });
-
-                let watcher = new DOMWatcher(node, binding, ["nodeValue"], [bindingContent]);
-                binding.addListener(watcher);
-            }
+    if ((compileChildNodes || compileAllChildNodes) && node.hasChildNodes()) {
+        if (compileAllChildNodes) {
+            compileChildNodes = true;
         }
-        return;
+        else {
+            compileChildNodes = false;
+        }
+        let frag = document.createDocumentFragment();
+        let child = node.firstChild;
+        while (child !== null) {
+            compile(child, binding, compileChildNodes, compileAllChildNodes);
+            frag.appendChild(child);
+            child = node.firstChild;
+        }
+        node.appendChild(frag);
     }
     return;
 }
 
-function nodeToFragment(node: HTMLElement, binding: Binding) {
-    let frag = document.createDocumentFragment();
-    let child = node.firstChild;
-    while (child !== null) {
-        compile(child, binding);
-        frag.appendChild(child);
-        child = node.firstChild;
+function compile(node: Node, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
+    if (node.nodeType === 1) {
+        compileHTMLNode(<HTMLElement>node, binding, compileChildNodes, compileAllChildNodes);
+        return;
     }
-    return frag;
+
+    if (node.nodeType === 3) {
+        compileTextNode(<CharacterData>node, binding);
+        return;
+    }
 }
