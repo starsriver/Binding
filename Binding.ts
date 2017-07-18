@@ -1,282 +1,307 @@
-const BINDING_REGEXP = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
+namespace SRBinding {
+ 
+    /**
+    * @private
+    * base Binding string, example: {Binding identifier}
+    */
+    const BINDING_REGEXP = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
 
-interface Observer {
-    update<T, U>(T, U): void;
-}
-
-interface Subject {
-    addListener(Observer): void;
-    removeListener(Observer): void;
-    notify<T, U>(T, U): void;
-    _observers: Observer[];
-}
-
-class BindingData implements Subject {
-    constructor(data: object) {
-        this.data = data;
-        this._observers = [];
+    interface Observer {
+        update<T, U>(T, U): void;
     }
-    data: object;
-    _observers: Binding[];
-    notify(dataName: string, dataValue: any) {
-        this._observers.forEach(element => {
-            element.update(dataName, dataValue);
-        })
+
+    interface Subject {
+        addListener(Observer): void;
+        removeListener(Observer): void;
+        notify<T, U>(T, U): void;
+        _observers: Observer[];
     }
-    addListener(listener: Binding) {
-        if (this._observers.find(element => {
-            return element === listener;
-        }) === undefined) {
-            this._observers.push(listener);
+
+    /**
+     * BindingData.data is real data as binding source, you should't direct change it by BindingData.data.identifier or BindingData.data[identifier],
+     * if you want to change it, you should use Binding.identifier or Binding[identifier] to indirect change it.
+     */
+    class BindingData implements Subject {
+        constructor(data: object) {
+            this.data = data;
+            this._observers = [];
         }
-    }
-    removeListener(listener: Binding) {
-        let index = this._observers.findIndex(element => {
-            return element === listener;
-        });
-        if (index !== -1) {
-            this._observers.splice(index, 1);
+        data: object;
+        _observers: Binding[];
+        notify(dataName: string, dataValue: any) {
+            this._observers.forEach(element => {
+                element.update(dataName, dataValue);
+            })
         }
-    }
-}
-
-
-class DOMWatcher implements Observer {
-    constructor(node: Node, binding: Binding, bindingAttrs: string[], bindingContents: string[]) {
-        this.node = node;
-        this.binding = binding;
-        this.bindingAttrs = bindingAttrs;
-        this.bindingContents = bindingContents;
-    }
-    update(dataName: string, dataValue: any) {
-        if (this.node.nodeType === 1) {
-            let index = this.bindingContents.findIndex(element => {
-                return element === dataName;
+        addListener(listener: Binding) {
+            if (this._observers.find(element => {
+                return element.id === listener.id;
+            }) === undefined) {
+                this._observers.push(listener);
+            }
+        }
+        removeListener(listener: Binding | string) {
+            let id: string;
+            if(typeof listener === "string"){
+                id = listener;
+            }
+            else{
+                id = listener.id;
+            }
+            let index = this._observers.findIndex(element =>{
+                return element.id === id;
             });
-            if (index === -1) {
-                // throw "data: " + dataName + " can't find!";
+            if (index !== -1) {
+                this._observers.splice(index, 1);
+            }
+        }
+    }
+
+
+    class DOMWatcher implements Observer {
+        constructor(node: Node, binding: Binding, bindingAttrs: string[], bindingContents: string[]) {
+            this.node = node;
+            this.binding = binding;
+            this.bindingAttrs = bindingAttrs;
+            this.bindingContents = bindingContents;
+        }
+        update(dataName: string, dataValue: any) {
+            if (this.node.nodeType === 1) {
+                let index = this.bindingContents.findIndex(element => {
+                    return element === dataName;
+                });
+                if (index === -1) {
+                    // throw "data: " + dataName + " can't find!";
+                    return;
+                }
+
+                let attrName = this.bindingAttrs[index];
+
+                let attrs = this.node.attributes;
+                let attr = attrs.getNamedItem(attrName);
+                if (attr === null) {
+                    throw "Can't find attribute named " + attrName + "";
+                }
+                if (attr.nodeValue !== dataValue) {
+                    attr.nodeValue = dataValue;
+                    if ((this.node.nodeName === "INPUT" || this.node.nodeName === "TEXTAREA") && attrName === "value") {
+                        (<HTMLInputElement | HTMLTextAreaElement>this.node).value = dataValue;
+                    }
+                }
                 return;
             }
 
-            let attrName = this.bindingAttrs[index];
-
-            let attrs = this.node.attributes;
-            let attr = attrs.getNamedItem(attrName);
-            if (attr === null) {
-                throw "Can't find attribute named " + attrName + "";
+            if (this.node.nodeType === 3) {
+                let index = this.bindingContents.findIndex(element => {
+                    return element === dataName;
+                });
+                if (index === -1) {
+                    return;
+                }
+                this.node.nodeValue = dataValue;
             }
-            if (attr.nodeValue !== dataValue) {
-                attr.nodeValue = dataValue;
-                if ((this.node.nodeName === "INPUT" || this.node.nodeName === "TEXTAREA") && attrName === "value") {
-                    (<HTMLInputElement | HTMLTextAreaElement>this.node).value = dataValue;
+
+        }
+        node: Node;
+        binding: Binding;
+        bindingAttrs: string[] = [];
+        bindingContents: string[] = [];
+    }
+
+    class Binding implements Subject, Observer {
+        constructor(id: string, bindingData: BindingData) {
+            this.id = id;
+            this.data = bindingData;
+            this._observers = [];
+            this.compileChildNodes = true;
+            this.compileAllChildNodes = false;
+            this.data.addListener(this);
+            observe(this);
+        }
+        id: string;
+        data: BindingData;
+        compileChildNodes: boolean;
+        compileAllChildNodes: boolean;
+        _observers: DOMWatcher[];
+        update(dataName: string, dataValue: any) {
+            this.notify(dataName, dataValue);
+        }
+        addListener(listener: DOMWatcher) {
+            if (this._observers.find(element => {
+                return element.node === listener.node;
+            }) === undefined) {
+                this._observers.push(listener);
+            }
+        }
+        removeListener(listener: DOMWatcher | Node) {
+            let node: Node;
+            if(listener instanceof DOMWatcher){
+                node = listener.node;
+            }
+            else{
+                node = listener;
+            }
+            let index = this._observers.findIndex(element => {
+                return element.node === node;
+            }); 
+            if (index !== -1) {
+                this._observers.splice(index, 1);
+            }
+        }
+        notify(dataName: string, dataValue: any) {
+            this._observers.forEach(element => {
+                element.update(dataName, dataValue);
+            })
+        }
+        compile() {
+            let node = document.getElementById(this.id);
+            if (node === null) {
+                throw "Can't find node by ID: " + this.id;
+            }
+            compile(node, this, this.compileChildNodes, this.compileAllChildNodes);
+        }
+    }
+
+    function defineReactive(binding: Binding, key: string) {
+        let data = binding.data.data;
+        Object.defineProperty(binding, key, {
+            get: function () {
+                //console.log("get " + key + " is " + value);
+                return data[key];
+            },
+            set: function (newValue: any) {
+                if (newValue === binding.data[key]) {
+                    return;
+                }
+                data[key] = newValue;
+                binding.data.notify(key, newValue);
+                //console.log("set " + key + " is " + value);
+            }
+        });
+    }
+
+    function observe(binding: Binding) {
+        Object.keys(binding.data.data).forEach(key => {
+            defineReactive(binding, key);
+        });
+    }
+
+    function compileTextNode(node: CharacterData, binding: Binding) {
+        let nodevalue = node.data.trim();
+        if (nodevalue.match(BINDING_REGEXP) !== null) {
+            let bindingContent = nodevalue.substring(9, nodevalue.length - 1);
+            if (binding[bindingContent] !== undefined) {
+                node.nodeValue = binding[bindingContent];
+
+                let mo = new MutationObserver(records => {
+                    records.forEach(record => {
+                        let newVal = record.target.nodeValue;
+                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newVal);
+                        if (record.oldValue !== newVal) {
+                            binding[bindingContent] = newVal;
+                        }
+                    });
+                });
+
+                mo.observe(node, {
+                    "characterData": true,
+                    "characterDataOldValue": true
+                });
+
+                let watcher = new DOMWatcher(node, binding, ["nodeValue"], [bindingContent]);
+                binding.addListener(watcher);
+            }
+        }
+        return;
+    }
+
+    function compileHTMLNode(node: HTMLElement, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
+        if (node.hasAttributes()) {
+            let attrs = node.attributes;
+            let bindingAttrs: string[] = [];
+            let bindingContents: string[] = [];
+            for (let i = 0; i < attrs.length; i++) {
+                let attr = attrs[i];
+                let attrValue = attrs[i].nodeValue;
+                if (attr.nodeValue.trim().match(BINDING_REGEXP) !== null) {
+                    let bindingContent = attr.nodeValue.substring(9, attr.nodeValue.length - 1);
+
+                    if (binding[bindingContent] !== undefined) {
+                        bindingAttrs.push(attr.nodeName);
+                        bindingContents.push(bindingContent);
+
+                        if (attr.nodeName === "value" && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA")) {
+                            node.addEventListener("input", e => {
+                                let element = <HTMLInputElement | HTMLTextAreaElement>(e.target);
+                                let value = element.value;
+                                element.setAttribute("value", value);
+                                element.value = value;
+                            }, false);
+                        }
+                        attr.nodeValue = binding[bindingContent];
+                    }
                 }
             }
+            if (bindingAttrs.length !== 0) {
+                let mo = new MutationObserver(records => {
+                    records.forEach(record => {
+                        if (record.type === "attributes") {
+                            let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
+
+                            // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
+                            if (record.oldValue !== newValue) {
+                                let index = bindingAttrs.findIndex(function (value) {
+                                    return value === record.attributeName;
+                                });
+                                binding[bindingContents[index]] = newValue;
+                            }
+                            if ((record.target.nodeName === "INPUT" || record.target.nodeName === "TEXTAREA") && record.attributeName === "value") {
+                                (<HTMLInputElement | HTMLTextAreaElement>record.target).value = newValue;
+                            }
+                            return;
+                        }
+                    });
+                });
+
+                mo.observe(node, {
+                    "attributes": true,
+                    "attributeOldValue": true,
+                    "attributeFilter": bindingAttrs
+                });
+
+                let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents);
+                binding.addListener(watcher);
+            }
+        }
+
+        if ((compileChildNodes || compileAllChildNodes) && node.hasChildNodes()) {
+            if (compileAllChildNodes) {
+                compileChildNodes = true;
+            }
+            else {
+                compileChildNodes = false;
+            }
+            let frag = document.createDocumentFragment();
+            let child = node.firstChild;
+            while (child !== null) {
+                compile(child, binding, compileChildNodes, compileAllChildNodes);
+                frag.appendChild(child);
+                child = node.firstChild;
+            }
+            node.appendChild(frag);
+        }
+        return;
+    }
+
+    function compile(node: Node, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
+        if (node.nodeType === 1) {
+            compileHTMLNode(<HTMLElement>node, binding, compileChildNodes, compileAllChildNodes);
             return;
         }
 
-        if (this.node.nodeType === 3) {
-            let index = this.bindingContents.findIndex(element => {
-                return element === dataName;
-            });
-            if (index === -1) {
-                return;
-            }
-            this.node.nodeValue = dataValue;
+        if (node.nodeType === 3) {
+            compileTextNode(<CharacterData>node, binding);
+            return;
         }
-
-    }
-    node: Node;
-    binding: Binding;
-    bindingAttrs: string[] = [];
-    bindingContents: string[] = [];
-}
-
-class Binding implements Subject, Observer {
-    constructor(id: string, bindingData: BindingData) {
-        this.id = id;
-        this.data = bindingData;
-        this._observers = [];
-        this.compileChildNodes = true;
-        this.compileAllChildNodes = false;
-        this.data.addListener(this);
-        observe(this);
-    }
-    id: string;
-    data: BindingData;
-    compileChildNodes: boolean;
-    compileAllChildNodes: boolean;
-    _observers: Observer[];
-    update(dataName: string, dataValue: any) {
-        this.notify(dataName, dataValue);
-    }
-    addListener(listener: Observer) {
-        if (this._observers.find(element => {
-            return element === listener;
-        }) === undefined) {
-            this._observers.push(listener);
-        }
-    }
-    removeListener(listener: Observer) {
-        let index = this._observers.findIndex(element => {
-            return element === listener;
-        });
-        if (index !== -1) {
-            this._observers.splice(index, 1);
-        }
-    }
-    notify(dataName: string, dataValue: any) {
-        this._observers.forEach(element => {
-            element.update(dataName, dataValue);
-        })
-    }
-    compile() {
-        let node = document.getElementById(this.id);
-        if (node === null) {
-            throw "Can't find node by ID: " + this.id;
-        }
-        compile(node, this, this.compileChildNodes, this.compileAllChildNodes);
-    }
-}
-
-function defineReactive(binding: Binding, key: string) {
-    let data = binding.data.data;
-    Object.defineProperty(binding, key, {
-        get: function () {
-            //console.log("get " + key + " is " + value);
-            return data[key];
-        },
-        set: function (newValue: any) {
-            if (newValue === binding.data[key]) {
-                return;
-            }
-            data[key] = newValue;
-            binding.data.notify(key, newValue);
-            //console.log("set " + key + " is " + value);
-        }
-    });
-}
-
-function observe(binding: Binding) {
-    Object.keys(binding.data.data).forEach(key => {
-        defineReactive(binding, key);
-    });
-}
-
-function compileTextNode(node: CharacterData, binding: Binding) {
-    let nodevalue = node.data.trim();
-    if (nodevalue.match(BINDING_REGEXP) !== null) {
-        let bindingContent = nodevalue.substring(9, nodevalue.length - 1);
-        if (binding[bindingContent] !== undefined) {
-            node.nodeValue = binding[bindingContent];
-
-            let mo = new MutationObserver(records => {
-                records.forEach(record => {
-                    let newVal = record.target.nodeValue;
-                    // console.log(record.attributeName + " from " + record.oldValue + " to " + newVal);
-                    if (record.oldValue !== newVal) {
-                        binding[bindingContent] = newVal;
-                    }
-                });
-            });
-
-            mo.observe(node, {
-                "characterData": true,
-                "characterDataOldValue": true
-            });
-
-            let watcher = new DOMWatcher(node, binding, ["nodeValue"], [bindingContent]);
-            binding.addListener(watcher);
-        }
-    }
-    return;
-}
-
-function compileHTMLNode(node: HTMLElement, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
-    if (node.hasAttributes()) {
-        let attrs = node.attributes;
-        let bindingAttrs: string[] = [];
-        let bindingContents: string[] = [];
-        for (let i = 0; i < attrs.length; i++) {
-            let attr = attrs[i];
-            let attrValue = attrs[i].nodeValue;
-            if (attr.nodeValue.trim().match(BINDING_REGEXP) !== null) {
-                let bindingContent = attr.nodeValue.substring(9, attr.nodeValue.length - 1);
-
-                if (binding[bindingContent] !== undefined) {
-                    bindingAttrs.push(attr.nodeName);
-                    bindingContents.push(bindingContent);
-
-                    if (attr.nodeName === "value" && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA")) {
-                        node.addEventListener("input", e => {
-                            let element = <HTMLInputElement | HTMLTextAreaElement>(e.target);
-                            let value = element.value;
-                            element.setAttribute("value", value);
-                            element.value = value;
-                        }, false);
-                    }
-                    attr.nodeValue = binding[bindingContent];
-                }
-            }
-        }
-        if (bindingAttrs.length !== 0) {
-            let mo = new MutationObserver(records => {
-                records.forEach(record => {
-                    if (record.type === "attributes") {
-                        let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
-
-                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
-                        if (record.oldValue !== newValue) {
-                            let index = bindingAttrs.findIndex(function (value) {
-                                return value === record.attributeName;
-                            });
-                            binding[bindingContents[index]] = newValue;
-                        }
-                        if ((record.target.nodeName === "INPUT" || record.target.nodeName === "TEXTAREA") && record.attributeName === "value") {
-                            (<HTMLInputElement | HTMLTextAreaElement>record.target).value = newValue;
-                        }
-                        return;
-                    }
-                });
-            });
-
-            mo.observe(node, {
-                "attributes": true,
-                "attributeOldValue": true,
-                "attributeFilter": bindingAttrs
-            });
-
-            let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents);
-            binding.addListener(watcher);
-        }
-    }
-
-    if ((compileChildNodes || compileAllChildNodes) && node.hasChildNodes()) {
-        if (compileAllChildNodes) {
-            compileChildNodes = true;
-        }
-        else {
-            compileChildNodes = false;
-        }
-        let frag = document.createDocumentFragment();
-        let child = node.firstChild;
-        while (child !== null) {
-            compile(child, binding, compileChildNodes, compileAllChildNodes);
-            frag.appendChild(child);
-            child = node.firstChild;
-        }
-        node.appendChild(frag);
-    }
-    return;
-}
-
-function compile(node: Node, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
-    if (node.nodeType === 1) {
-        compileHTMLNode(<HTMLElement>node, binding, compileChildNodes, compileAllChildNodes);
-        return;
-    }
-
-    if (node.nodeType === 3) {
-        compileTextNode(<CharacterData>node, binding);
-        return;
     }
 }

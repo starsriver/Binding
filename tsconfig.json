@@ -1,6 +1,10 @@
 {
     "compilerOptions": {
         "target": "es6",
+        "removeComments": true,
         "outFile": "Binding.js"
-    }
+    },
+    "files": [
+        "Binding.ts"
+    ]
 }
