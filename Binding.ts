@@ -1,10 +1,12 @@
 namespace SRBinding {
- 
+
     /**
     * @private
     * base Binding string, example: {Binding identifier}
     */
     const BINDING_REGEXP = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
+
+    export let Debug = false;
 
     interface Observer {
         update<T, U>(T, U): void;
@@ -21,7 +23,7 @@ namespace SRBinding {
      * BindingData.data is real data as binding source, you should't direct change it by BindingData.data.identifier or BindingData.data[identifier],
      * if you want to change it, you should use Binding.identifier or Binding[identifier] to indirect change it.
      */
-    class BindingData implements Subject {
+    export class BindingData implements Subject {
         constructor(data: object) {
             this.data = data;
             this._observers = [];
@@ -42,13 +44,13 @@ namespace SRBinding {
         }
         removeListener(listener: Binding | string) {
             let id: string;
-            if(typeof listener === "string"){
+            if (typeof listener === "string") {
                 id = listener;
             }
-            else{
+            else {
                 id = listener.id;
             }
-            let index = this._observers.findIndex(element =>{
+            let index = this._observers.findIndex(element => {
                 return element.id === id;
             });
             if (index !== -1) {
@@ -59,11 +61,12 @@ namespace SRBinding {
 
 
     class DOMWatcher implements Observer {
-        constructor(node: Node, binding: Binding, bindingAttrs: string[], bindingContents: string[]) {
+        constructor(node: Node, binding: Binding, bindingAttrs: string[], bindingContents: string[], mutationObserver: MutationObserver) {
             this.node = node;
             this.binding = binding;
             this.bindingAttrs = bindingAttrs;
             this.bindingContents = bindingContents;
+            this.mutationObserver = mutationObserver;
         }
         update(dataName: string, dataValue: any) {
             if (this.node.nodeType === 1) {
@@ -104,11 +107,12 @@ namespace SRBinding {
         }
         node: Node;
         binding: Binding;
-        bindingAttrs: string[] = [];
-        bindingContents: string[] = [];
+        bindingAttrs: string[];
+        bindingContents: string[];
+        mutationObserver: MutationObserver;
     }
 
-    class Binding implements Subject, Observer {
+    export class Binding implements Subject, Observer {
         constructor(id: string, bindingData: BindingData) {
             this.id = id;
             this.data = bindingData;
@@ -135,15 +139,15 @@ namespace SRBinding {
         }
         removeListener(listener: DOMWatcher | Node) {
             let node: Node;
-            if(listener instanceof DOMWatcher){
+            if (listener instanceof DOMWatcher) {
                 node = listener.node;
             }
-            else{
+            else {
                 node = listener;
             }
             let index = this._observers.findIndex(element => {
                 return element.node === node;
-            }); 
+            });
             if (index !== -1) {
                 this._observers.splice(index, 1);
             }
@@ -159,6 +163,13 @@ namespace SRBinding {
                 throw "Can't find node by ID: " + this.id;
             }
             compile(node, this, this.compileChildNodes, this.compileAllChildNodes);
+        }
+        clear() {
+            this._observers.forEach(element => {
+                element.mutationObserver.disconnect();
+            });
+            this._observers = [];
+            this.data.removeListener(this);
         }
     }
 
@@ -208,7 +219,7 @@ namespace SRBinding {
                     "characterDataOldValue": true
                 });
 
-                let watcher = new DOMWatcher(node, binding, ["nodeValue"], [bindingContent]);
+                let watcher = new DOMWatcher(node, binding, ["nodeValue"], [bindingContent], mo);
                 binding.addListener(watcher);
             }
         }
@@ -216,10 +227,10 @@ namespace SRBinding {
     }
 
     function compileHTMLNode(node: HTMLElement, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
+        let bindingAttrs: string[] = [];
+        let bindingContents: string[] = [];
         if (node.hasAttributes()) {
             let attrs = node.attributes;
-            let bindingAttrs: string[] = [];
-            let bindingContents: string[] = [];
             for (let i = 0; i < attrs.length; i++) {
                 let attr = attrs[i];
                 let attrValue = attrs[i].nodeValue;
@@ -242,53 +253,73 @@ namespace SRBinding {
                     }
                 }
             }
-            if (bindingAttrs.length !== 0) {
-                let mo = new MutationObserver(records => {
-                    records.forEach(record => {
-                        if (record.type === "attributes") {
-                            let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
-
-                            // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
-                            if (record.oldValue !== newValue) {
-                                let index = bindingAttrs.findIndex(function (value) {
-                                    return value === record.attributeName;
-                                });
-                                binding[bindingContents[index]] = newValue;
-                            }
-                            if ((record.target.nodeName === "INPUT" || record.target.nodeName === "TEXTAREA") && record.attributeName === "value") {
-                                (<HTMLInputElement | HTMLTextAreaElement>record.target).value = newValue;
-                            }
-                            return;
-                        }
-                    });
-                });
-
-                mo.observe(node, {
-                    "attributes": true,
-                    "attributeOldValue": true,
-                    "attributeFilter": bindingAttrs
-                });
-
-                let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents);
-                binding.addListener(watcher);
-            }
         }
 
         if ((compileChildNodes || compileAllChildNodes) && node.hasChildNodes()) {
+            let compileGrandsonNodes: boolean;
             if (compileAllChildNodes) {
-                compileChildNodes = true;
+                compileGrandsonNodes = true;
             }
             else {
-                compileChildNodes = false;
+                compileGrandsonNodes = false;
             }
             let frag = document.createDocumentFragment();
             let child = node.firstChild;
             while (child !== null) {
-                compile(child, binding, compileChildNodes, compileAllChildNodes);
+                compile(child, binding, compileGrandsonNodes, compileAllChildNodes);
                 frag.appendChild(child);
                 child = node.firstChild;
             }
             node.appendChild(frag);
+        }
+
+        if (bindingAttrs.length !== 0 || compileChildNodes || compileAllChildNodes) {
+            let mo = new MutationObserver(records => {
+                records.forEach(record => {
+                    if (record.type === "attributes") {
+                        let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
+
+                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
+                        if (record.oldValue !== newValue) {
+                            let index = bindingAttrs.findIndex(function (value) {
+                                return value === record.attributeName;
+                            });
+                            binding[bindingContents[index]] = newValue;
+                        }
+                        if ((record.target.nodeName === "INPUT" || record.target.nodeName === "TEXTAREA") && record.attributeName === "value") {
+                            (<HTMLInputElement | HTMLTextAreaElement>record.target).value = newValue;
+                        }
+                        return;
+                    }
+                    if (record.type === "childList") {
+                        if (record.removedNodes !== null) {
+                            record.removedNodes.forEach(element => {
+                                binding.removeListener(element);
+                            });
+                        }
+                        if (record.addedNodes !== null) {
+                            record.addedNodes.forEach(element => {
+                                compile(element, binding, compileChildNodes, compileChildNodes);
+                            });
+                        }
+                    }
+                });
+            });
+
+            let options: MutationObserverInit = {};
+            if (bindingAttrs.length !== 0) {
+                options.attributes = true;
+                options.attributeOldValue = true;
+                options.attributeFilter = bindingAttrs;
+            }
+
+            if (compileChildNodes || compileAllChildNodes) {
+                options.childList = true;
+            }
+            mo.observe(node, options);
+
+            let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents, mo);
+            binding.addListener(watcher);
         }
         return;
     }
