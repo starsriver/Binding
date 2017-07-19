@@ -57,6 +57,9 @@ namespace SRBinding {
                 this._observers.splice(index, 1);
             }
         }
+        clear(){
+            this._observers = [];
+        }
     }
 
 
@@ -149,6 +152,7 @@ namespace SRBinding {
                 return element.node === node;
             });
             if (index !== -1) {
+                this._observers[index].mutationObserver.disconnect();
                 this._observers.splice(index, 1);
             }
         }
