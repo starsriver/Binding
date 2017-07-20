@@ -258,10 +258,11 @@ namespace SRBinding {
 
                 let mo = new MutationObserver(records => {
                     records.forEach(record => {
-                        let newVal = record.target.nodeValue;
+                        let newValue = record.target.nodeValue;
                         // console.debug(record.attributeName + " from " + record.oldValue + " to " + newVal);
-                        if (record.oldValue !== newVal) {
-                            binding[bindingContent] = newVal;
+                        if (record.oldValue !== newValue) {
+                            binding[bindingContent] = newValue;
+                            Binding_Debug("Node %O's " + record.attributeName +" is changed from " + record.oldValue + " to " + newValue);
                         }
                     });
                 });
@@ -330,14 +331,13 @@ namespace SRBinding {
             node.appendChild(frag);
         }
 
-        if (bindingAttrs.length !== 0 || compileChildNodes || compileAllChildNodes) {
+        if (bindingAttrs.length !== 0 || (compileChildNodes || compileAllChildNodes) && node.hasChildNodes()) {
             Binding_Debug("create mo.");
             let mo = new MutationObserver(records => {
                 records.forEach(record => {
                     if (record.type === "attributes") {
                         let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
 
-                        // console.debug(record.attributeName + " from " + record.oldValue + " to " + newValue);
                         if (record.oldValue !== newValue) {
                             let index = bindingAttrs.findIndex(function (value) {
                                 return value === record.attributeName;
@@ -355,6 +355,7 @@ namespace SRBinding {
                         if (record.removedNodes !== null) {
                             record.removedNodes.forEach(element => {
                                 Binding_Debug("Node %O removed from %O", element, node);
+                                //这里需要递归的移除所有子节点监听
                                 binding.removeListener(element);
                             });
                         }
