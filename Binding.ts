@@ -6,8 +6,6 @@ namespace SRBinding {
     */
     const BINDING_REGEXP = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
 
-    export let Debug = false;
-
     interface Observer {
         update<T, U>(T, U): void;
     }
@@ -77,7 +75,6 @@ namespace SRBinding {
                     return element === dataName;
                 });
                 if (index === -1) {
-                    // throw "data: " + dataName + " can't find!";
                     return;
                 }
 
@@ -181,7 +178,6 @@ namespace SRBinding {
         let data = binding.data.data;
         Object.defineProperty(binding, key, {
             get: function () {
-                //console.log("get " + key + " is " + value);
                 return data[key];
             },
             set: function (newValue: any) {
@@ -190,7 +186,6 @@ namespace SRBinding {
                 }
                 data[key] = newValue;
                 binding.data.notify(key, newValue);
-                //console.log("set " + key + " is " + value);
             }
         });
     }
@@ -283,7 +278,6 @@ namespace SRBinding {
                     if (record.type === "attributes") {
                         let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
 
-                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
                         if (record.oldValue !== newValue) {
                             let index = bindingAttrs.findIndex(function (value) {
                                 return value === record.attributeName;
