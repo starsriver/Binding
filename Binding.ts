@@ -6,7 +6,13 @@ namespace SRBinding {
     */
     const BINDING_REGEXP = /^\{Binding (_|[a-zA-Z])+(\w*)\}$/;
 
-    export let Debug = false;
+    export let Debug = true;
+
+    function Binding_Debug(message?: any, ...optionalParams: any[]) {
+        if (Debug) {
+            console.debug(message, optionalParams);
+        }
+    }
 
     interface Observer {
         update<T, U>(T, U): void;
@@ -31,14 +37,23 @@ namespace SRBinding {
         data: object;
         _observers: Binding[];
         notify(dataName: string, dataValue: any) {
+
+            Binding_Debug("BindingData %O: notify: dataName to " + dataValue, this);
+
             this._observers.forEach(element => {
                 element.update(dataName, dataValue);
             })
         }
         addListener(listener: Binding) {
+
+            Binding_Debug("BindingData %O: add Binding's id = " + listener.id, this);
+
             if (this._observers.find(element => {
                 return element.id === listener.id;
             }) === undefined) {
+
+                Binding_Debug("BindingData %O: add Binding's id = " + listener.id + "succeed!.", this);
+
                 this._observers.push(listener);
             }
         }
@@ -50,14 +65,23 @@ namespace SRBinding {
             else {
                 id = listener.id;
             }
+
+            Binding_Debug("BindingData %O will remove listener ,id is " + id, this);
+
             let index = this._observers.findIndex(element => {
                 return element.id === id;
             });
             if (index !== -1) {
                 this._observers.splice(index, 1);
+
+                Binding_Debug("BindingData %O is removed listener ,id is " + id, this);
+
             }
         }
-        clear(){
+        clear() {
+
+            Binding_Debug("BindingData %O clear.", this);
+
             this._observers = [];
         }
     }
@@ -72,6 +96,10 @@ namespace SRBinding {
             this.mutationObserver = mutationObserver;
         }
         update(dataName: string, dataValue: any) {
+
+            Binding_Debug("node %O " + 　this.node + " and Binding's id " + this.binding.id + "will update.", this.node);
+            Binding_Debug("the dataName is " + dataName + " to " + dataValue);
+
             if (this.node.nodeType === 1) {
                 let index = this.bindingContents.findIndex(element => {
                     return element === dataName;
@@ -131,12 +159,22 @@ namespace SRBinding {
         compileAllChildNodes: boolean;
         _observers: DOMWatcher[];
         update(dataName: string, dataValue: any) {
+
+            Binding_Debug("Binding %O will update", this);
+            Binding_Debug("dataName: " + dataName + " to " + dataValue);
+
             this.notify(dataName, dataValue);
         }
         addListener(listener: DOMWatcher) {
+
+            Binding_Debug("Binding %O add listener %O", this, listener);
+
             if (this._observers.find(element => {
                 return element.node === listener.node;
             }) === undefined) {
+
+                Binding_Debug("Binding %O add listener %O succeed.", this, listener);
+
                 this._observers.push(listener);
             }
         }
@@ -148,15 +186,21 @@ namespace SRBinding {
             else {
                 node = listener;
             }
+
+            Binding_Debug("Binding %O will remove listener %O", this, node);
+
             let index = this._observers.findIndex(element => {
                 return element.node === node;
             });
             if (index !== -1) {
                 this._observers[index].mutationObserver.disconnect();
                 this._observers.splice(index, 1);
+
+                Binding_Debug("Binding %O is removed listener %O", this, node);
             }
         }
         notify(dataName: string, dataValue: any) {
+            Binding_Debug("Binding %O notify dataName " + dataName + " to dataValue " + dataValue, this);
             this._observers.forEach(element => {
                 element.update(dataName, dataValue);
             })
@@ -181,7 +225,9 @@ namespace SRBinding {
         let data = binding.data.data;
         Object.defineProperty(binding, key, {
             get: function () {
-                //console.log("get " + key + " is " + value);
+
+                Binding_Debug("get " + key + " is " + data[key] + " from data %O.", data);
+
                 return data[key];
             },
             set: function (newValue: any) {
@@ -190,7 +236,9 @@ namespace SRBinding {
                 }
                 data[key] = newValue;
                 binding.data.notify(key, newValue);
-                //console.log("set " + key + " is " + value);
+
+                Binding_Debug("set " + key + " is " + newValue + "from data %O.", data);
+                //console.debug("set " + key + " is " + value);
             }
         });
     }
@@ -211,7 +259,7 @@ namespace SRBinding {
                 let mo = new MutationObserver(records => {
                     records.forEach(record => {
                         let newVal = record.target.nodeValue;
-                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newVal);
+                        // console.debug(record.attributeName + " from " + record.oldValue + " to " + newVal);
                         if (record.oldValue !== newVal) {
                             binding[bindingContent] = newVal;
                         }
@@ -224,6 +272,9 @@ namespace SRBinding {
                 });
 
                 let watcher = new DOMWatcher(node, binding, ["nodeValue"], [bindingContent], mo);
+
+                Binding_Debug("Build DOMWatcher %O and add it.", watcher);
+
                 binding.addListener(watcher);
             }
         }
@@ -231,6 +282,7 @@ namespace SRBinding {
     }
 
     function compileHTMLNode(node: HTMLElement, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
+        Binding_Debug("compile HTMLNode %O with Binding %O", node, binding);
         let bindingAttrs: string[] = [];
         let bindingContents: string[] = [];
         if (node.hasAttributes()) {
@@ -270,6 +322,7 @@ namespace SRBinding {
             let frag = document.createDocumentFragment();
             let child = node.firstChild;
             while (child !== null) {
+                Binding_Debug("Compile child node.");
                 compile(child, binding, compileGrandsonNodes, compileAllChildNodes);
                 frag.appendChild(child);
                 child = node.firstChild;
@@ -278,17 +331,20 @@ namespace SRBinding {
         }
 
         if (bindingAttrs.length !== 0 || compileChildNodes || compileAllChildNodes) {
+            Binding_Debug("create mo.");
             let mo = new MutationObserver(records => {
                 records.forEach(record => {
                     if (record.type === "attributes") {
                         let newValue = record.target.attributes.getNamedItem(record.attributeName).nodeValue;
 
-                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newValue);
+                        // console.debug(record.attributeName + " from " + record.oldValue + " to " + newValue);
                         if (record.oldValue !== newValue) {
                             let index = bindingAttrs.findIndex(function (value) {
                                 return value === record.attributeName;
                             });
                             binding[bindingContents[index]] = newValue;
+
+                            Binding_Debug("Node %O's " + record.attributeName +" is changed from " + record.oldValue + " to " + newValue);
                         }
                         if ((record.target.nodeName === "INPUT" || record.target.nodeName === "TEXTAREA") && record.attributeName === "value") {
                             (<HTMLInputElement | HTMLTextAreaElement>record.target).value = newValue;
@@ -298,11 +354,13 @@ namespace SRBinding {
                     if (record.type === "childList") {
                         if (record.removedNodes !== null) {
                             record.removedNodes.forEach(element => {
+                                Binding_Debug("Node %O removed from %O", element, node);
                                 binding.removeListener(element);
                             });
                         }
                         if (record.addedNodes !== null) {
                             record.addedNodes.forEach(element => {
+                                Binding_Debug("Node %O added to %O", element, node);
                                 compile(element, binding, compileChildNodes, compileChildNodes);
                             });
                         }
@@ -320,9 +378,11 @@ namespace SRBinding {
             if (compileChildNodes || compileAllChildNodes) {
                 options.childList = true;
             }
+            Binding_Debug("the mo options is %O.", options);
             mo.observe(node, options);
 
             let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents, mo);
+            Binding_Debug("Build DOMWatcher %O and add it.", watcher);
             binding.addListener(watcher);
         }
         return;
