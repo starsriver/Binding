@@ -48,6 +48,7 @@ namespace SRBinding {
             else {
                 id = listener.id;
             }
+
             let index = this._observers.findIndex(element => {
                 return element.id === id;
             });
@@ -55,11 +56,10 @@ namespace SRBinding {
                 this._observers.splice(index, 1);
             }
         }
-        clear(){
+        clear() {
             this._observers = [];
         }
     }
-
 
     class DOMWatcher implements Observer {
         constructor(node: Node, binding: Binding, bindingAttrs: string[], bindingContents: string[], mutationObserver: MutationObserver) {
@@ -154,6 +154,7 @@ namespace SRBinding {
             }
         }
         notify(dataName: string, dataValue: any) {
+
             this._observers.forEach(element => {
                 element.update(dataName, dataValue);
             })
@@ -205,10 +206,10 @@ namespace SRBinding {
 
                 let mo = new MutationObserver(records => {
                     records.forEach(record => {
-                        let newVal = record.target.nodeValue;
-                        // console.log(record.attributeName + " from " + record.oldValue + " to " + newVal);
-                        if (record.oldValue !== newVal) {
-                            binding[bindingContent] = newVal;
+                        let newValue = record.target.nodeValue;
+                        // console.debug(record.attributeName + " from " + record.oldValue + " to " + newVal);
+                        if (record.oldValue !== newValue) {
+                            binding[bindingContent] = newValue;
                         }
                     });
                 });
@@ -226,6 +227,7 @@ namespace SRBinding {
     }
 
     function compileHTMLNode(node: HTMLElement, binding: Binding, compileChildNodes: boolean, compileAllChildNodes: boolean) {
+
         let bindingAttrs: string[] = [];
         let bindingContents: string[] = [];
         if (node.hasAttributes()) {
@@ -265,6 +267,7 @@ namespace SRBinding {
             let frag = document.createDocumentFragment();
             let child = node.firstChild;
             while (child !== null) {
+
                 compile(child, binding, compileGrandsonNodes, compileAllChildNodes);
                 frag.appendChild(child);
                 child = node.firstChild;
@@ -272,7 +275,7 @@ namespace SRBinding {
             node.appendChild(frag);
         }
 
-        if (bindingAttrs.length !== 0 || compileChildNodes || compileAllChildNodes) {
+        if (bindingAttrs.length !== 0 || (compileChildNodes || compileAllChildNodes) && node.hasChildNodes()) {
             let mo = new MutationObserver(records => {
                 records.forEach(record => {
                     if (record.type === "attributes") {
@@ -292,11 +295,14 @@ namespace SRBinding {
                     if (record.type === "childList") {
                         if (record.removedNodes !== null) {
                             record.removedNodes.forEach(element => {
+
+                                //这里需要递归的移除所有子节点监听
                                 binding.removeListener(element);
                             });
                         }
                         if (record.addedNodes !== null) {
                             record.addedNodes.forEach(element => {
+
                                 compile(element, binding, compileChildNodes, compileChildNodes);
                             });
                         }
@@ -314,9 +320,11 @@ namespace SRBinding {
             if (compileChildNodes || compileAllChildNodes) {
                 options.childList = true;
             }
+
             mo.observe(node, options);
 
             let watcher = new DOMWatcher(node, binding, bindingAttrs, bindingContents, mo);
+
             binding.addListener(watcher);
         }
         return;
