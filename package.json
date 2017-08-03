@@ -1,0 +1,17 @@
+{
+    "name": "Binding",
+    "version": "0.2",
+    "description": "two way bind from view to model or from model to view",
+    "main": "Binding.js",
+    "repository": "git@github.com:starsriver/Binding.git",
+    "author": "starsriver <starsriver@outlook.com>",
+    "license": "GPL-2.0",
+    "scripts": {
+        "build": "tsc && babel Binding.es6.js -o Binding.es5.js && uglifyjs Binding.es5.js -m -o Binding.min.js",
+        "windows-clear": "del Binding.es6.js Binding.es5.js",
+        "linux-clear": "rm Binding.es6.js Binding.es5.js"
+    },
+    "dependencies": {
+        "babel-preset-es2015": "^6.24.1"
+    }
+}

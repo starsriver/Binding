@@ -2,7 +2,7 @@
     "compilerOptions": {
         "target": "es6",
         "removeComments": true,
-        "outFile": "Binding.js"
+        "outFile": "Binding.es6.js"
     },
     "files": [
         "Binding.ts"
