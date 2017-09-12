@@ -1,6 +1,2 @@
 .vscode
-*.html
-*.json
-*.md
-*.js
 node_modules
