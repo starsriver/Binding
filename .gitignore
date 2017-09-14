@@ -1,5 +1,6 @@
 .vscode
-*.html
-*.json
-*.md
-*.ts
+node_modules
+temp
+src/binding.js
+.yarnclean
+

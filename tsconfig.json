@@ -2,9 +2,9 @@
     "compilerOptions": {
         "target": "es6",
         "removeComments": true,
-        "outFile": "Binding.js"
+        "outDir": "./temp"
     },
     "files": [
-        "Binding.ts"
+        "./src/binding.ts"
     ]
 }
