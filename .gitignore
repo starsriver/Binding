@@ -1,6 +1,5 @@
 .vscode
-*.html
-*.json
-*.md
-*.js
 node_modules
+lib
+temp
+src/binding.js

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Binding</title>
+    <meta charset="UTF-8">
+</head>
+
+<body>
+    <div id="app">
+        "app"
+        <input type="text" id="a" value="{Binding inputvalue}" tet="{Binding tet}">
+        <br/>
+        <span id="b"></span> {Binding inputText}
+        <br /> {Binding p}
+        <h1 id="p">{Binding p}</h1>
+        <div>
+            <a href="{Binding href}"></a>
+            <span>
+                <p>{Binding inputvalue}</p>
+            </span>
+        </div>
+        "/app"
+    </div>
+
+    <div id="app2">
+        <p>app2</p>
+        <input type="text" id="a" value="{Binding inputvalue}" tet="{Binding tet}">
+        <br/>
+        <span></span> {Binding inputText}
+        <br /> {Binding p}
+        <h1>{Binding p}</h1>
+        <div>
+            <a href="{Binding href}"></a>
+            <span>
+                <p>{Binding inputvalue}</p>
+            </span>
+        </div>
+        <p>/app2</p>
+    </div>
+    <div id="app3">
+        <p>app3</p>
+        <input type="text" id="a" value="{Binding inputvalue}" tet="{Binding tet}">
+        <br/>
+        <span id="app3s"></span> {Binding inputText}
+        <br /> {Binding p}
+        <h1 id="app3p">{Binding p}</h1>
+        <div>
+            <a href="{Binding href}"></a>
+            <span>
+                <p>{Binding inputvalue}</p>
+            </span>
+        </div>
+        <p>/app3</p>
+    </div>
+    <div id="bindingExample" value="{Binding inputValue}">
+        {Binding textNodeContent}
+        <a href="{Binding inputUrl}">{Binding tabAContent}</a>
+        <p>{Binding tabAContent}</p>
+        <input type="text" value="{Binding inputValue}"></input>
+    </div>
+
+    <script src="../lib/browser/binding.min.js"></script>
+    <script>
+        let {BindingData, Binding} = require("binding_js");
+        let data = new BindingData({
+            inputvalue: "app->a->inputText",
+            inputText: "测试",
+            tet: "asdasdadsdasd",
+            p: "ppPPppPP",
+            href: "127.0.0.1"
+        });
+        let bind = new Binding("app", data);
+        //bind.compileAllChildNodes = true;
+        let bind2 = new Binding("app2", data);
+        bind.compile();
+        bind2.compile();
+
+        var bindingDataTest = new BindingData({
+            textNodeContent:"this text will show in textNode",
+            inputUrl:"https://github.com/starsriver/Binding",
+            tabAContent:"this is binding_js's github",
+            inputValue: 123456
+        });
+        var bindingTest = new Binding("bindingExample", bindingDataTest);
+        //bindingTest.compileAllChildNodes = true;
+        bindingTest.compile();
+    </script>
+</body>
+
+</html>
